@@ -2,36 +2,95 @@
  * ============================================
  * IPTV Proxy - Cloudflare Worker
  * ============================================
- *
- * Features:
- *  - Supports standard HLS
- *  - Supports Wowza / SMIL streams
- *  - Preserves query strings (nimblesessionid fix)
- *  - Rewrites master + variant playlists
- *  - Rewrites EXT-X-KEY URIs
- *  - Streams binary segments safely
- *  - CORS enabled
- *
- * Production ready
+ * Updated with Panel Support
  */
 
 // ============================================
 // 📡 CHANNEL LIST
 // ============================================
 const CHANNELS = {
-  // https://workername.username.workers.dev/2342/index.m3u8
-  "2342": "https://live.livetvstream.co.uk/LS-63503-4",
-  // https://workername.username.workers.dev/1001/stream.m3u8
-  "1001": "https://familyhls.avatv.live/hls",
-  // https://workername.username.workers.dev/1234/playlist.m3u8
-  "1234": "https://voa-ingest.akamaized.net/hls/live/2033876/tvmc07"
-
-  /**
-   * Adding an IPTV Channel: 
-   * https://github.com/frank-vpl/TV-Workers#-adding-an-iptv-channel
-  */
+  "1111": "https://live.livetvstream.co.uk/LS-63503-4",
+  "1112": "https://avaserieshls.wns.live/hls",  
+  "1113": "https://familyhls.avatv.live/hls",
+  "1114": "https://voa-ingest.akamaized.net/hls/live/2033876/tvmc07",
+  "1115": "https://hls.247box.live/hls",
+  "1116": "https://cafefhls.wns.live/hls",
+  "1117": "https://fxtvhls.wns.live/hls",
+  "1118": "https://toonixhls.wns.live/hls",
+  "1119": "https://newfhls.wns.live/hls",
+  "1120": "https://hls.oxir.live/hls",
+  "9999": "https://www.hlsrundle-stream-iptv.gq/api/hls"
 }
 
+// ============================================
+// 🎨 HTML PANEL (اختیاری)
+// ============================================
+const PANEL_HTML = `<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📺 انتخاب شبکه</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 30px;
+        }
+        h1 { color: #333; margin-bottom: 25px; }
+        .channels { display: grid; gap: 10px; margin-bottom: 20px; }
+        .channel {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        .channel:hover { border-color: #667eea; background: #f5f7ff; }
+        .channel.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📺 انتخاب شبکه IPTV</h1>
+        <div class="channels" id="ch"></div>
+    </div>
+    <script>
+        const channels = ${JSON.stringify(CHANNELS)};
+        const ch = document.getElementById('ch');
+        Object.keys(channels).forEach(id => {
+            const div = document.createElement('div');
+            div.className = 'channel';
+            div.textContent = 'شبکه ' + id;
+            div.onclick = () => {
+                document.querySelectorAll('.channel').forEach(c => c.classList.remove('active'));
+                div.classList.add('active');
+                const url = window.location.origin + '/' + id + '/index.m3u8';
+                alert('آدرس:\n' + url);
+            };
+            ch.appendChild(div);
+        });
+    </script>
+</body>
+</html>`;
 
 // ============================================
 // 🌍 WORKER ENTRY
@@ -39,156 +98,108 @@ const CHANNELS = {
 export default {
   async fetch(request) {
     try {
+      const requestUrl = new URL(request.url);
+      const pathParts = requestUrl.pathname.split("/").filter(Boolean);
+      const channelId = pathParts[0];
+      const restPath = pathParts.slice(1).join("/");
+      const queryString = requestUrl.search || "";
 
-      // Parse incoming request
-      const requestUrl = new URL(request.url)
-      const pathParts = requestUrl.pathname.split("/").filter(Boolean)
-
-      const channelId = pathParts[0]
-      const restPath = pathParts.slice(1).join("/")  // segment path
-      const queryString = requestUrl.search || ""     // IMPORTANT: preserve tokens
+      // ============================================
+      // 🎨 PANEL ROUTE
+      // ============================================
+      if (channelId === "panel" || channelId === "") {
+        return new Response(PANEL_HTML, {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=3600"
+          }
+        });
+      }
 
       // Validate channel
-      const base = CHANNELS[channelId]
+      const base = CHANNELS[channelId];
       if (!base) {
-        return new Response("Channel not found", { status: 404 })
+        return new Response("Channel not found", { status: 404 });
       }
 
       // ============================================
-      // 🎯 BUILD TARGET URL (SMIL SAFE + QUERY SAFE)
+      // 🎯 BUILD TARGET URL
       // ============================================
-
-      let targetUrl
+      let targetUrl;
 
       if (restPath) {
-        // Example:
-        // /1234/media_xxx.ts?nimblesessionid=xxx
         targetUrl = base.endsWith("/")
           ? base + restPath + queryString
-          : base + "/" + restPath + queryString
+          : base + "/" + restPath + queryString;
       } else {
-        // First request (playlist)
         if (base.includes(".smil")) {
-          targetUrl = base + "/playlist.m3u8" + queryString
+          targetUrl = base + "/playlist.m3u8" + queryString;
         } else {
-          targetUrl = base + "/index.m3u8" + queryString
+          targetUrl = base + "/index.m3u8" + queryString;
         }
       }
 
-      // Special handler for encoded absolute URLs
+      // Special handler for encoded URLs
       if (restPath.startsWith("__proxy__/")) {
-        const encodedUrl = restPath.replace("__proxy__/", "")
-        const decodedUrl = decodeURIComponent(encodedUrl)
+        const encodedUrl = restPath.replace("__proxy__/", "");
+        const decodedUrl = decodeURIComponent(encodedUrl);
 
         const upstreamResponse = await fetch(decodedUrl, {
           headers: {
-            "User-Agent":
-              request.headers.get("User-Agent") ||
-              "Mozilla/5.0",
+            "User-Agent": request.headers.get("User-Agent") || "Mozilla/5.0",
             "Referer": new URL(decodedUrl).origin + "/"
           }
-        })
+        });
 
         return new Response(upstreamResponse.body, {
           headers: {
-            "Content-Type":
-              upstreamResponse.headers.get("content-type") ||
-              "application/octet-stream",
+            "Content-Type": upstreamResponse.headers.get("content-type") || "application/octet-stream",
             "Access-Control-Allow-Origin": "*"
           }
-        })
+        });
       }
 
-      const upstreamUrl = new URL(targetUrl)
-
-      // ============================================
-      // 📡 UPSTREAM HEADERS
-      // ============================================
-
+      const upstreamUrl = new URL(targetUrl);
       const upstreamHeaders = {
-        "User-Agent":
-          request.headers.get("User-Agent") ||
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Referer": upstreamUrl.origin + "/"
-        // Do NOT send Origin header (prevents CDN block)
-      }
+        "User-Agent": request.headers.get("User-Agent") || "Mozilla/5.0",
+        "Referer": new URL(targetUrl).origin + "/"
+      };
 
-      const upstreamResponse = await fetch(upstreamUrl.toString(), {
+      const upstreamResponse = await fetch(upstreamUrl, {
         headers: upstreamHeaders
-      })
+      });
 
-      if (!upstreamResponse.ok) {
-        return new Response(
-          "Upstream Error: " + upstreamResponse.status,
-          { status: upstreamResponse.status }
-        )
+      // ============================================
+      // 🔄 REWRITE PLAYLIST
+      // ============================================
+      let body = await upstreamResponse.text();
+
+      if (body.includes("#EXTM3U")) {
+        const lines = body.split("\n");
+        const rewrittenLines = lines.map((line, idx) => {
+          if (line.startsWith("http") && !line.startsWith("https://")) {
+            return "http://" + line;
+          }
+          if (line.startsWith("http") && !line.includes(request.url.split(channelId)[0])) {
+            const encodedUrl = encodeURIComponent(line);
+            return request.url.split(channelId)[0] + channelId + "/__proxy__/" + encodedUrl;
+          }
+          return line;
+        });
+        body = rewrittenLines.join("\n");
       }
 
-      const contentType =
-        upstreamResponse.headers.get("content-type") || ""
-
-
-      // ============================================
-      // 🔥 PLAYLIST HANDLING (.m3u8)
-      // ============================================
-
-      if (
-        contentType.includes("application/vnd.apple.mpegurl") ||
-        contentType.includes("application/x-mpegURL") ||
-        upstreamUrl.pathname.endsWith(".m3u8")
-      ) {
-
-        const finalUrl = upstreamResponse.url
-        const finalBase = finalUrl.substring(0, finalUrl.lastIndexOf("/") + 1)
-
-        let playlistText = await upstreamResponse.text()
-
-        const proxyBase = `${requestUrl.origin}/${channelId}`
-
-        playlistText = playlistText.replace(
-          /^([^#][^\r\n]*)/gm,
-          (line) => {
-
-            if (!line.trim()) return line
-
-            // Build absolute upstream URL properly
-            const absoluteUpstreamUrl = new URL(line, finalBase).toString()
-
-            // Convert to proxy path
-            const relativeToBase = absoluteUpstreamUrl.replace(base, "")
-
-            return `${proxyBase}/${relativeToBase}`
-          }
-        )
-
-        return new Response(playlistText, {
-          headers: {
-            "Content-Type": "application/vnd.apple.mpegurl",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "*",
-            "Cache-Control": "public, max-age=5"
-          }
-        })
-      }
-
-
-      // ============================================
-      // 🎥 SEGMENT STREAMING (.ts, .m4s, etc.)
-      // ============================================
-
-      return new Response(upstreamResponse.body, {
-        status: 200,
+      return new Response(body, {
         headers: {
-          "Content-Type": contentType,
+          "Content-Type": upstreamResponse.headers.get("content-type") || "text/plain",
           "Access-Control-Allow-Origin": "*",
-          "Cache-Control": "public, max-age=30"
+          "Cache-Control": "public, max-age=300"
         }
-      })
+      });
 
-    } catch (err) {
-      return new Response("Proxy Error: " + err.message, {
-        status: 500
-      })
+    } catch (error) {
+      return new Response(`Error: ${error.message}`, { status: 500 });
     }
   }
-}
+};
