@@ -1,3 +1,5 @@
+[Farsi version](https://github.com/absh1234/TV-Workers-panel-/blob/master/README_FA.md)
+
 # 📡 IPTV Proxy & Manager (Cloudflare Workers)
 
 A high-performance IPTV proxy and management panel built on Cloudflare Workers. This project allows you to bypass CORS restrictions, manage your HLS streams, and customize your channel list with an easy-to-use web interface.
