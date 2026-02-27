@@ -1,33 +1,38 @@
-# 📺 TV Workers
+📡 IPTV Proxy & Manager (Cloudflare Workers)
+A high-performance IPTV proxy and management panel built on Cloudflare Workers. This project allows you to bypass CORS restrictions, manage your HLS streams, and customize your channel list with an easy-to-use web interface.
 
-Cloudflare Worker–based IPTV proxy for streaming HLS channels with automatic playlist rewriting and CORS support.
-
-[Farsi Version](README_FA.md)
-
-## 🚀 Features
-
-* Proxy IPTV HLS streams (`.m3u8`)
-* Automatic playlist URL rewriting
-* Segment streaming support (`.ts`, `.m4s`, etc.)
-* Dynamic headers (User-Agent, Referer, Origin)
-* CORS enabled (`Access-Control-Allow-Origin: *`)
-* Lightweight and fast (Cloudflare Workers)
-
----
-
-## 📂 Project Structure
-
-```
-worker.js
-README.md
-```
-
----
-
-## 🛠 How It Works
-
-The Worker:
-
+🚀 Features
+HLS Proxying: Bypasses CORS and Referer restrictions for seamless playback.
+Visual Panel: Add, Edit, and Remove channels directly from the browser.
+Drag & Drop Reordering: Organize your channels visually; the order is saved permanently.
+Adaptive Stream Support: Automatically tests various suffixes (index.m3u8, playlist.m3u8, etc.) to find the working stream.
+KV Storage: All data is securely stored in your Cloudflare KV Namespace.
+🛠 Installation Guide
+Step 1: Create KV Namespace
+Log in to your Cloudflare Dashboard.
+Go to Workers & Pages > KV.
+Click Create Namespace and name it CUSTOM_CHANNELS.
+Note down the ID of the created namespace.
+Step 2: Deploy the Worker
+Go to Workers & Pages > Create application > Create Worker.
+Give your worker a name (e.g., my-iptv-proxy).
+Click Deploy.
+After deployment, click Edit Code and paste the content of worker.js.
+Step 3: Bind KV to Worker
+Inside your Worker's dashboard, go to the Settings tab.
+Select Variables.
+Under KV Namespace Bindings, click Add binding.
+Set Variable name to CUSTOM_CHANNELS.
+Select the namespace you created in Step 1.
+Click Save and Deploy.
+🖥 How to Use
+Open your Worker URL (e.g., https://my-iptv-proxy.workers.dev).
+Use the + button to add a new channel (Name, HLS URL, and Logo).
+Drag and Drop the channel cards to change their display order.
+Click on any channel card to start the web player.
+Use the Edit (Pencil) icon to modify or delete existing channels.
+📄 License
+MIT License - Feel free to use and contribute!
 1. Reads the channel ID from the URL path
 2. Matches it against the `CHANNELS` object
 3. Proxies the request to the real IPTV source
